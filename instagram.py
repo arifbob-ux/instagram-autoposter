@@ -57,13 +57,16 @@ class Instagram:
         return out
 
     # ---------- publishing ----------
-    def post_reel(self, video_path, caption="", share_to_feed=True, log=print):
-        container = self._req("POST", f"{self.user_id}/media", params={
+    def post_reel(self, video_path, caption="", share_to_feed=True, log=print, cover_url=None):
+        params = {
             "media_type": "REELS",
             "upload_type": "resumable",
             "caption": caption,
             "share_to_feed": "true" if share_to_feed else "false",
-        })
+        }
+        if cover_url:
+            params["cover_url"] = cover_url
+        container = self._req("POST", f"{self.user_id}/media", params=params)
         cid = container["id"]
         uri = container.get("uri") or f"https://rupload.facebook.com/ig-api-upload/{self.version}/{cid}"
         log(f"  container {cid} created, uploading {os.path.getsize(video_path)/1e6:.1f} MB")

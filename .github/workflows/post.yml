@@ -41,6 +41,7 @@ jobs:
           IG_API_VERSION: ${{ vars.IG_API_VERSION }}
           IG_GRAPH_HOST: ${{ vars.IG_GRAPH_HOST }}
           DELETE_AFTER_POST: ${{ vars.DELETE_AFTER_POST }}
+          COVER_URL: ${{ vars.COVER_URL }}
         run: |
           MODE="${{ github.event.inputs.mode || 'tick' }}"
           case "$MODE" in

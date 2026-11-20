@@ -48,7 +48,8 @@ class Config:
         self.share_to_feed = env("SHARE_TO_FEED", "true").lower() == "true"
         self.min_gap_min = float(env("MIN_GAP_MINUTES", "5"))
         self.loop_seconds = int(env("LOOP_SECONDS", "300"))
-        self.delete_after_post = env("DELETE_AFTER_POST", "false").lower() == "true"
+        self.cover_url = env("COVER_URL")  # public JPEG used as the cover of every Reel
+        self.delete_after_post =env("DELETE_AFTER_POST", "false").lower() == "true"
 
 
 def log(msg):
@@ -124,7 +125,7 @@ def tick(cfg, ig, drive, dry_run=False):
         path = os.path.join(tmp, video["name"])
         drive.download(video["id"], path)
         try:
-            media_id = ig.post_reel(path, caption, cfg.share_to_feed, log=log)
+            media_id = ig.post_reel(path, caption, cfg.share_to_feed, log=log, cover_url=cfg.cover_url)
         except IGError as e:
             log(f"FAILED: {e}")
             if cfg.failed:
