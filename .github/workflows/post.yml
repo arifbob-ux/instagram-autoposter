@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: "tick | check | dry-run | pairs | post-all | clean-posted"
+        description: "tick | check | dry-run | pairs | post-all | retry-failed | clean-posted"
         default: "check"
 
 concurrency:
@@ -55,5 +55,6 @@ jobs:
             clean-posted) python poster.py --clean-posted ;;
             pairs)   python poster.py --pairs ;;
             post-all) python poster.py --post-all ;;
+            retry-failed) python poster.py --retry-failed ;;
             *)       python poster.py ;;
           esac

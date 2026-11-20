@@ -270,6 +270,7 @@ def main():
     ap.add_argument("--clean-posted", action="store_true", help="delete everything in the posted folder")
     ap.add_argument("--post-all", action="store_true", help="post every ready clip in the queue now")
     ap.add_argument("--pairs", action="store_true", help="list clip/caption pairs, post nothing")
+    ap.add_argument("--retry-failed", action="store_true", help="move failed clips back and post them now")
     a = ap.parse_args()
 
     if a.clean_posted:
@@ -303,6 +304,11 @@ def main():
         return check(cfg, ig, drive)
     if a.pairs:
         return run_batch(cfg, ig, drive, 10**6, "pair check", dry_run=True)
+    if a.retry_failed:
+        for f in drive.list_files(cfg.failed):
+            drive.move(f["id"], cfg.failed, cfg.queue)
+            log(f"moved {f['name']} back to queue")
+        return run_batch(cfg, ig, drive, 10**6, "retry", a.dry_run)
     if a.post_all:
         return run_batch(cfg, ig, drive, 10**6, "post-all", a.dry_run)
     if not a.loop:
