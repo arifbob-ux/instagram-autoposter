@@ -7,3 +7,4 @@ service-account*.json
 *.json
 *.txt
 !requirements.txt
+drive-cleaner.gs
