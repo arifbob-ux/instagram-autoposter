@@ -195,6 +195,7 @@ def main():
                 log(f"Drive {label} folder OK: '{drive.folder_name(fid)}'")
         q = drive.queue(cfg.queue)
         log(f"{len(q)} clips in queue, {sum(1 for _, c in q if c)} with caption files")
+        log(f"{len(drive.list_files(cfg.posted))} file(s) in posted folder")
         return 0
 
     cfg = Config()
