@@ -1,0 +1,39 @@
+name: Weekly maintenance
+
+# 1) Refreshes the Instagram token (they expire after 60 days) and saves it back to secrets.
+# 2) Makes a tiny commit so GitHub never auto-disables the schedule (it does after 60 idle days).
+
+on:
+  schedule:
+    - cron: "0 3 * * 1"   # Mondays 03:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  maintain:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install requests
+      - name: Refresh Instagram token
+        id: refresh
+        env:
+          IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
+        run: python refresh_token.py
+      - name: Save new token to repo secrets
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+          NEW_TOKEN: ${{ steps.refresh.outputs.token }}
+        run: gh secret set IG_ACCESS_TOKEN --body "$NEW_TOKEN" --repo "$GITHUB_REPOSITORY"
+      - name: Keep-alive commit
+        run: |
+          date -u > .keepalive
+          git config user.name "autoposter-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add .keepalive
+          git commit -m "keepalive" && git push || echo "nothing to commit"
