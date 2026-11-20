@@ -195,7 +195,14 @@ def main():
                 log(f"Drive {label} folder OK: '{drive.folder_name(fid)}'")
         q = drive.queue(cfg.queue)
         log(f"{len(q)} clips in queue, {sum(1 for _, c in q if c)} with caption files")
-        log(f"{len(drive.list_files(cfg.posted))} file(s) in posted folder")
+        posted = drive.svc.files().list(
+            q=f"'{cfg.posted}' in parents and trashed = false",
+            fields="files(name,createdTime,owners(me))", supportsAllDrives=True,
+            includeItemsFromAllDrives=True).execute().get("files", [])
+        log(f"{len(posted)} file(s) in posted folder")
+        for f in posted:
+            owner = "robot" if any(o.get("me") for o in f.get("owners", [])) else "you"
+            log(f"  - {f['name']} (owner: {owner}, created {f['createdTime']})")
         return 0
 
     cfg = Config()
