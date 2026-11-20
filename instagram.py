@@ -56,6 +56,9 @@ class Instagram:
             out.append(datetime.strptime(m["timestamp"], "%Y-%m-%dT%H:%M:%S%z"))
         return out
 
+    def permalink(self, media_id):
+        return self._req("GET", str(media_id), params={"fields": "permalink"})["permalink"]
+
     # ---------- publishing ----------
     def post_reel(self, video_path, caption="", share_to_feed=True, log=print, cover_url=None):
         params = {

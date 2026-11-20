@@ -48,6 +48,11 @@ class Config:
         self.share_to_feed = env("SHARE_TO_FEED", "true").lower() == "true"
         self.min_gap_min = float(env("MIN_GAP_MINUTES", "5"))
         self.loop_seconds = int(env("LOOP_SECONDS", "300"))
+        self.schedule_mode = env("SCHEDULE_MODE", "spread").lower()   # spread | batch
+        self.batch_times = [t.strip() for t in env("BATCH_TIMES", "09:00,18:00").split(",")]
+        self.batch_window_min = int(env("BATCH_WINDOW_MINUTES", "120"))
+        self.batch_gap = int(env("BATCH_GAP_SECONDS", "10"))
+        self.require_caption = env("REQUIRE_CAPTION", "false").lower() == "true"
         self.cover_url = env("COVER_URL")  # public JPEG used as the cover of every Reel
         self.delete_after_post =env("DELETE_AFTER_POST", "false").lower() == "true"
 
@@ -101,26 +106,28 @@ def decide(cfg, ig, now=None):
     return True, f"slot due ({posted_in_window}/{slots_due} due so far, target {cfg.posts_per_day})"
 
 
-def tick(cfg, ig, drive, dry_run=False):
-    should, reason = decide(cfg, ig)
-    log(("POST: " if should else "skip: ") + reason)
-    if not should:
-        return 0
-
+def ready_queue(cfg, drive):
+    """Queue of (video, caption_file) pairs. Pairing is by identical file name
+    (abc.mp4 <-> abc.txt). With REQUIRE_CAPTION, clips without a caption are held back."""
     queue = drive.queue(cfg.queue)
-    if not queue:
-        log("queue folder is empty - add more clips!")
-        return 0
-    video, cap_file = queue[0]
-    log(f"next clip: {video['name']}  ({len(queue)} in queue)")
-    if len(queue) <= cfg.posts_per_day:
-        log(f"warning: only {len(queue)} clips left (~{len(queue)/cfg.posts_per_day:.1f} days)")
+    names = {os.path.splitext(f["name"])[0] for f in drive.list_files(cfg.queue)
+             if f["name"].lower().endswith(".txt")}
+    videos = {os.path.splitext(v["name"])[0] for v, _ in queue}
+    for orphan in sorted(names - videos):
+        log(f"warning: caption '{orphan}.txt' has no matching video - check the file names")
+    if cfg.require_caption:
+        for v, c in queue:
+            if not c:
+                log(f"HOLD: {v['name']} has no matching .txt caption - not posted")
+        queue = [(v, c) for v, c in queue if c]
+    return queue
 
+
+def post_one(cfg, ig, drive, video, cap_file):
+    """Publishes one clip with its own caption. Returns the Reel link, or None on failure."""
     caption = drive.read_text(cap_file["id"]) if cap_file else cfg.default_caption
-    if dry_run:
-        log(f"[dry-run] would post with caption: {caption[:120]!r}")
-        return 0
-
+    log(f"posting {video['name']}  |  caption from {cap_file['name'] if cap_file else 'DEFAULT'}: "
+        f"{caption[:70]!r}")
     with tempfile.TemporaryDirectory() as tmp:
         path = os.path.join(tmp, video["name"])
         drive.download(video["id"], path)
@@ -133,20 +140,100 @@ def tick(cfg, ig, drive, dry_run=False):
                 if cap_file:
                     drive.move(cap_file["id"], cfg.queue, cfg.failed)
                 log("moved clip to failed folder so the queue keeps moving")
-            return 1
+            return None
 
-    log(f"published {video['name']} -> media {media_id}")
-    done = [video] + ([cap_file] if cap_file else [])
-    for f in done:
+    try:
+        link = ig.permalink(media_id)
+    except IGError:
+        link = f"media {media_id}"
+    log(f"published {video['name']} -> {link}")
+    for f in [video] + ([cap_file] if cap_file else []):
         if cfg.delete_after_post:
             try:
                 drive.trash(f["id"])
-                log(f"deleted {f['name']} from Drive (in Trash for 30 days)")
                 continue
             except Exception as e:
                 log(f"could not delete {f['name']} ({e}); moving to posted folder instead")
         drive.move(f["id"], cfg.queue, cfg.posted)
-    return 0
+    return link
+
+
+def run_batch(cfg, ig, drive, count, label, dry_run=False):
+    queue = ready_queue(cfg, drive)
+    take = queue[:count]
+    log(f"{label}: {len(take)} of {len(queue)} ready clips")
+    if dry_run:
+        for v, c in take:
+            log(f"[dry-run] {v['name']}  <->  {c['name'] if c else 'DEFAULT caption'}")
+        return 0
+    results, failed = [], 0
+    for i, (v, c) in enumerate(take, 1):
+        used, quota = ig.publishing_usage()
+        if used >= quota:
+            log(f"Instagram API limit reached ({used}/{quota}) - stopping, the rest stay queued")
+            break
+        log(f"--- {label} {i}/{len(take)} ---")
+        link = post_one(cfg, ig, drive, v, c)
+        if link:
+            results.append((v["name"], link))
+        else:
+            failed += 1
+        if i < len(take):
+            time.sleep(cfg.batch_gap)
+    log("=" * 60)
+    log(f"{label} DONE: {len(results)} posted, {failed} failed. Links for submission:")
+    for name, link in results:
+        print(f"  {link}   ({name})", flush=True)
+    return 1 if failed else 0
+
+
+def batch_due(cfg, ig, now=None):
+    """Returns (label, count_fraction_divisor) if a batch should run now, else (None, reason)."""
+    now = now or datetime.now(timezone.utc)
+    local = now.astimezone(cfg.tz)
+    slots = []
+    for i, t in enumerate(cfg.batch_times):
+        h, m = map(int, t.split(":"))
+        slots.append((i, local.replace(hour=h, minute=m, second=0, microsecond=0)))
+    current = [(i, s) for i, s in slots if s <= local]
+    if not current:
+        return None, f"before today's first batch ({cfg.batch_times[0]} {cfg.tz.key})"
+    i, start = current[-1]
+    if (local - start).total_seconds() > cfg.batch_window_min * 60:
+        nxt = next((t for j, t in enumerate(cfg.batch_times) if j > i), cfg.batch_times[0] + " tomorrow")
+        return None, f"batch {cfg.batch_times[i]} window closed; next batch {nxt}"
+    if any(t >= start for t in ig.recent_post_times()):
+        return None, f"batch {cfg.batch_times[i]} already posted today"
+    remaining_batches = len(cfg.batch_times) - i
+    return (f"batch {cfg.batch_times[i]}", remaining_batches), "due"
+
+
+def tick(cfg, ig, drive, dry_run=False):
+    if cfg.schedule_mode == "batch":
+        due, reason = batch_due(cfg, ig)
+        if not due:
+            log(f"skip: {reason}")
+            return 0
+        label, remaining_batches = due
+        n = len(ready_queue(cfg, drive))
+        count = -(-n // remaining_batches)  # this batch's share, rounded up
+        if n == 0:
+            log(f"{label}: queue is empty - add clips!")
+            return 0
+        return run_batch(cfg, ig, drive, count, label, dry_run)
+
+    should, reason = decide(cfg, ig)
+    log(("POST: " if should else "skip: ") + reason)
+    if not should:
+        return 0
+    queue = ready_queue(cfg, drive)
+    if not queue:
+        log("queue folder is empty - add more clips!")
+        return 0
+    if dry_run:
+        log(f"[dry-run] next: {queue[0][0]['name']}")
+        return 0
+    return 0 if post_one(cfg, ig, drive, *queue[0]) else 1
 
 
 def clean_posted(cfg, drive):
@@ -181,6 +268,8 @@ def main():
     ap.add_argument("--loop", action="store_true")
     ap.add_argument("--check-drive", action="store_true", help="test Drive access only")
     ap.add_argument("--clean-posted", action="store_true", help="delete everything in the posted folder")
+    ap.add_argument("--post-all", action="store_true", help="post every ready clip in the queue now")
+    ap.add_argument("--pairs", action="store_true", help="list clip/caption pairs, post nothing")
     a = ap.parse_args()
 
     if a.clean_posted:
@@ -212,6 +301,10 @@ def main():
 
     if a.check:
         return check(cfg, ig, drive)
+    if a.pairs:
+        return run_batch(cfg, ig, drive, 10**6, "pair check", dry_run=True)
+    if a.post_all:
+        return run_batch(cfg, ig, drive, 10**6, "post-all", a.dry_run)
     if not a.loop:
         return tick(cfg, ig, drive, a.dry_run)
     while True:
