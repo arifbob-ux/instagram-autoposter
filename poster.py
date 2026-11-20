@@ -31,8 +31,8 @@ def env(name, default=None, required=False):
 
 
 class Config:
-    def __init__(self):
-        self.ig_token = env("IG_ACCESS_TOKEN", required=True)
+    def __init__(self, need_instagram=True):
+        self.ig_token = env("IG_ACCESS_TOKEN", required=need_instagram)
         self.ig_user_id = env("IG_USER_ID")
         self.ig_host = env("IG_GRAPH_HOST", "graph.instagram.com")
         self.ig_version = env("IG_API_VERSION", "v23.0")
@@ -162,7 +162,19 @@ def main():
     ap.add_argument("--check", action="store_true")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--loop", action="store_true")
+    ap.add_argument("--check-drive", action="store_true", help="test Drive access only")
     a = ap.parse_args()
+
+    if a.check_drive:
+        cfg = Config(need_instagram=False)
+        drive = Drive(cfg.sa_json)
+        log(f"Drive service account: {drive.email}")
+        for label, fid in (("queue", cfg.queue), ("posted", cfg.posted), ("failed", cfg.failed)):
+            if fid:
+                log(f"Drive {label} folder OK: '{drive.folder_name(fid)}'")
+        q = drive.queue(cfg.queue)
+        log(f"{len(q)} clips in queue, {sum(1 for _, c in q if c)} with caption files")
+        return 0
 
     cfg = Config()
     ig = Instagram(cfg.ig_token, cfg.ig_user_id, cfg.ig_host, cfg.ig_version)
