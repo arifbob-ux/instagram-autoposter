@@ -48,6 +48,7 @@ class Config:
         self.share_to_feed = env("SHARE_TO_FEED", "true").lower() == "true"
         self.min_gap_min = float(env("MIN_GAP_MINUTES", "5"))
         self.loop_seconds = int(env("LOOP_SECONDS", "300"))
+        self.delete_after_post = env("DELETE_AFTER_POST", "false").lower() == "true"
 
 
 def log(msg):
@@ -133,11 +134,26 @@ def tick(cfg, ig, drive, dry_run=False):
                 log("moved clip to failed folder so the queue keeps moving")
             return 1
 
-    drive.move(video["id"], cfg.queue, cfg.posted)
-    if cap_file:
-        drive.move(cap_file["id"], cfg.queue, cfg.posted)
     log(f"published {video['name']} -> media {media_id}")
+    done = [video] + ([cap_file] if cap_file else [])
+    for f in done:
+        if cfg.delete_after_post:
+            try:
+                drive.trash(f["id"])
+                log(f"deleted {f['name']} from Drive (in Trash for 30 days)")
+                continue
+            except Exception as e:
+                log(f"could not delete {f['name']} ({e}); moving to posted folder instead")
+        drive.move(f["id"], cfg.queue, cfg.posted)
     return 0
+
+
+def clean_posted(cfg, drive):
+    files = drive.list_files(cfg.posted)
+    for f in files:
+        drive.trash(f["id"])
+        log(f"deleted {f['name']} from posted folder")
+    log(f"{len(files)} file(s) deleted")
 
 
 def check(cfg, ig, drive):
@@ -163,7 +179,12 @@ def main():
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--loop", action="store_true")
     ap.add_argument("--check-drive", action="store_true", help="test Drive access only")
+    ap.add_argument("--clean-posted", action="store_true", help="delete everything in the posted folder")
     a = ap.parse_args()
+
+    if a.clean_posted:
+        cfg = Config(need_instagram=False)
+        return clean_posted(cfg, Drive(cfg.sa_json))
 
     if a.check_drive:
         cfg = Config(need_instagram=False)

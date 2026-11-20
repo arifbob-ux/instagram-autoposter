@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: "tick | check | dry-run"
+        description: "tick | check | dry-run | clean-posted"
         default: "check"
 
 concurrency:
@@ -40,10 +40,12 @@ jobs:
           IG_USER_ID: ${{ vars.IG_USER_ID }}
           IG_API_VERSION: ${{ vars.IG_API_VERSION }}
           IG_GRAPH_HOST: ${{ vars.IG_GRAPH_HOST }}
+          DELETE_AFTER_POST: ${{ vars.DELETE_AFTER_POST }}
         run: |
           MODE="${{ github.event.inputs.mode || 'tick' }}"
           case "$MODE" in
             check)   python poster.py --check ;;
             dry-run) python poster.py --dry-run ;;
+            clean-posted) python poster.py --clean-posted ;;
             *)       python poster.py ;;
           esac

@@ -61,5 +61,10 @@ class Drive:
         self.svc.files().update(fileId=file_id, addParents=to_folder, removeParents=from_folder,
                                 supportsAllDrives=True, fields="id").execute()
 
+    def trash(self, file_id):
+        """Moves a file to Drive's Trash (Google empties it automatically after 30 days)."""
+        self.svc.files().update(fileId=file_id, body={"trashed": True},
+                                supportsAllDrives=True, fields="id").execute()
+
     def folder_name(self, folder_id):
         return self.svc.files().get(fileId=folder_id, fields="name", supportsAllDrives=True).execute()["name"]
