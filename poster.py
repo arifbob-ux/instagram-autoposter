@@ -142,7 +142,7 @@ def tick(cfg, ig, drive, dry_run=False):
 
 def check(cfg, ig, drive):
     me = ig.whoami()
-    log(f"Instagram OK: @{me.get('username')} (id {ig.user_id}, {me.get('account_type')})")
+    log(f"Instagram OK: @{me.get('username')} (id {ig.user_id})")
     used, quota = ig.publishing_usage()
     log(f"API publishing quota: {used}/{quota} used in last 24h")
     log(f"Drive service account: {drive.email}")

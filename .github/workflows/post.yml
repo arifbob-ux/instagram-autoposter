@@ -39,6 +39,7 @@ jobs:
           SHARE_TO_FEED: ${{ vars.SHARE_TO_FEED }}
           IG_USER_ID: ${{ vars.IG_USER_ID }}
           IG_API_VERSION: ${{ vars.IG_API_VERSION }}
+          IG_GRAPH_HOST: ${{ vars.IG_GRAPH_HOST }}
         run: |
           MODE="${{ github.event.inputs.mode || 'tick' }}"
           case "$MODE" in

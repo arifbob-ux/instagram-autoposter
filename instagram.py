@@ -37,7 +37,7 @@ class Instagram:
 
     # ---------- info ----------
     def whoami(self):
-        return self._req("GET", "me", params={"fields": "user_id,username,account_type"})
+        return self._req("GET", str(self.user_id), params={"fields": "id,username"})
 
     def publishing_usage(self):
         """Returns (used_in_last_24h, allowed_per_24h)."""
