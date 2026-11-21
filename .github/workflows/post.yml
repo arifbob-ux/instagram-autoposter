@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: "tick | check | dry-run | pairs | post-all | retry-failed | clean-posted"
+        description: "tick | check | dry-run | pairs | post-all | retry-failed | test-notify | clean-posted"
         default: "check"
 
 concurrency:
@@ -47,6 +47,8 @@ jobs:
           BATCH_WINDOW_MINUTES: ${{ vars.BATCH_WINDOW_MINUTES }}
           BATCH_GAP_SECONDS: ${{ vars.BATCH_GAP_SECONDS }}
           REQUIRE_CAPTION: ${{ vars.REQUIRE_CAPTION }}
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+          NOTIFY_EMAIL: ${{ vars.NOTIFY_EMAIL }}
         run: |
           MODE="${{ github.event.inputs.mode || 'tick' }}"
           case "$MODE" in
@@ -56,5 +58,6 @@ jobs:
             pairs)   python poster.py --pairs ;;
             post-all) python poster.py --post-all ;;
             retry-failed) python poster.py --retry-failed ;;
+            test-notify) python poster.py --test-notify ;;
             *)       python poster.py ;;
           esac

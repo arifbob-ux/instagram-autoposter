@@ -53,6 +53,8 @@ class Config:
         self.batch_window_min = int(env("BATCH_WINDOW_MINUTES", "120"))
         self.batch_gap = int(env("BATCH_GAP_SECONDS", "10"))
         self.require_caption = env("REQUIRE_CAPTION", "false").lower() == "true"
+        self.ntfy_topic = env("NTFY_TOPIC")
+        self.notify_email = env("NOTIFY_EMAIL")
         self.cover_url = env("COVER_URL")  # public JPEG used as the cover of every Reel
         self.delete_after_post =env("DELETE_AFTER_POST", "false").lower() == "true"
 
@@ -184,7 +186,32 @@ def run_batch(cfg, ig, drive, count, label, dry_run=False):
     log(f"{label} DONE: {len(results)} posted, {failed} failed. Links for submission:")
     for name, link in results:
         print(f"  {link}   ({name})", flush=True)
+    if results or failed:
+        lines = [f"{link}  ({name[:3]})" for name, link in results]
+        if failed:
+            lines.append(f"\n⚠️ {failed} clip(s) failed - they are in IG Failed.")
+        notify(cfg, f"{label}: {len(results)} Reels posted - submit now!", "\n".join(lines),
+               priority=5, tags="rotating_light")
     return 1 if failed else 0
+
+
+def notify(cfg, title, message, priority=4, tags=""):
+    """Phone push notification (and optional email) via ntfy.sh."""
+    if not cfg.ntfy_topic:
+        return
+    body = {"topic": cfg.ntfy_topic, "title": title, "message": message[:3900],
+            "priority": priority, "tags": [t for t in tags.split(",") if t]}
+    run = os.environ.get("GITHUB_RUN_ID")
+    if run:
+        body["click"] = f"https://github.com/{os.environ.get('GITHUB_REPOSITORY')}/actions/runs/{run}"
+    if cfg.notify_email:
+        body["email"] = cfg.notify_email
+    try:
+        import requests
+        r = requests.post("https://ntfy.sh/", json=body, timeout=30)
+        log(f"notification sent (HTTP {r.status_code})")
+    except Exception as e:
+        log(f"notification failed: {e}")
 
 
 def batch_due(cfg, ig, now=None):
@@ -271,6 +298,7 @@ def main():
     ap.add_argument("--post-all", action="store_true", help="post every ready clip in the queue now")
     ap.add_argument("--pairs", action="store_true", help="list clip/caption pairs, post nothing")
     ap.add_argument("--retry-failed", action="store_true", help="move failed clips back and post them now")
+    ap.add_argument("--test-notify", action="store_true", help="send a test phone notification")
     a = ap.parse_args()
 
     if a.clean_posted:
@@ -304,6 +332,12 @@ def main():
         return check(cfg, ig, drive)
     if a.pairs:
         return run_batch(cfg, ig, drive, 10**6, "pair check", dry_run=True)
+    if a.test_notify:
+        notify(cfg, "Test: batch posted - submit now!",
+               "This is a test from your Instagram auto-poster.\n"
+               "Real alerts list every Reel link right after each 9 AM / 6 PM ET batch.",
+               priority=5, tags="rotating_light")
+        return 0
     if a.retry_failed:
         for f in drive.list_files(cfg.failed):
             drive.move(f["id"], cfg.failed, cfg.queue)
